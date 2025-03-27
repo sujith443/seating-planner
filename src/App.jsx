@@ -23,6 +23,7 @@ const App = () => {
   const [roomLayout, setRoomLayout] = useState({ rows: 4, cols: 6 });
 
   const handleFileProcessed = (hallTickets) => {
+    console.log(`Processing ${hallTickets.length} hall tickets`);
     setExcelData(hallTickets);
     const generatedSeatingPlan = generateSeatingPlan(
       hallTickets, 
@@ -30,28 +31,35 @@ const App = () => {
       studentsPerRoom, 
       roomLayout
     );
+    console.log(`Generated seating plan with ${generatedSeatingPlan.length} rooms`);
     setSeatingPlan(generatedSeatingPlan);
     setRoomNames(Array(generatedSeatingPlan.length).fill().map((_, index) => `Room ${index + 1}`));
     setLoading(false);
   };
 
-  // This improved function handles various Excel file formats more robustly
+  // Enhanced file upload function
   const handleFileUpload = (file) => {
     setError('');
     setLoading(true);
     
     if (!file) {
       setLoading(false);
+      setError('No file selected. Please select an Excel file to upload.');
       return;
     }
     
+    console.log(`Processing file: ${file.name}`);
+    
     const reader = new FileReader();
+    
     reader.onload = (e) => {
       try {
-        // More robust approach to read Excel files
+        console.log('File loaded, processing...');
+        
+        // Parse Excel file
         const data = new Uint8Array(e.target.result);
         
-        // Use more comprehensive options for reading
+        // More comprehensive options for reading Excel
         const workbook = XLSX.read(data, { 
           type: 'array',
           cellDates: true,
@@ -65,107 +73,125 @@ const App = () => {
           return;
         }
         
-        // Attempt to read all sheets to find hall tickets
-        const hallTickets = [];
+        console.log('Excel file loaded. Sheets:', workbook.SheetNames);
+        
+        // Enhanced hall ticket pattern matching - supports more formats
+        // This regex looks for common hall ticket patterns:
+        // - Standard JNTU format: 3 digits + "F1A" + 4 digits (e.g., 259F1A0501)
+        // - Also matches variations with different separators or formats
+        const hallTicketPatterns = [
+          /\d{3}F1A\d{4}/g,  // Standard format: 259F1A0501
+          /\d{2}[A-Z]\d{2}[A-Z]\d{4}/g,  // Other possible formats like 21F15A0123
+          /\b\d{2}[A-Z]{1,2}\d{2}[A-Z]\d{2,4}\b/g  // More general pattern
+        ];
+        
+        // Track all found hall tickets
+        const allHallTickets = [];
+        
+        // Function to extract hall tickets from a text value
+        const extractHallTickets = (value) => {
+          if (!value || typeof value !== 'string') return [];
+          
+          let foundTickets = [];
+          
+          // Try each pattern
+          hallTicketPatterns.forEach(pattern => {
+            const matches = value.match(pattern);
+            if (matches) {
+              foundTickets = [...foundTickets, ...matches];
+            }
+          });
+          
+          return foundTickets;
+        };
+        
+        // Process all sheets in the workbook
         let ticketsFound = false;
         
-        // Try each sheet until we find valid hall tickets
         for (const sheetName of workbook.SheetNames) {
-          try {
-            const worksheet = workbook.Sheets[sheetName];
-            
-            // Try different parsing methods
-            // Method 1: Parse as JSON with headers
-            let jsonData = XLSX.utils.sheet_to_json(worksheet);
-            
-            // If no data, try without headers
-            if (!jsonData || jsonData.length === 0) {
-              jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            }
-            
-            // Extract hall ticket numbers from the data
-            if (Array.isArray(jsonData)) {
-              // Handle array of objects (with headers)
-              if (typeof jsonData[0] === 'object' && jsonData[0] !== null) {
-                Object.values(jsonData).forEach(row => {
-                  if (row) {
-                    Object.values(row).forEach(cell => {
-                      if (cell && typeof cell === 'string') {
-                        // Look for patterns like "259F1A0501" in the cell
-                        const matches = cell.match(/\d{3}F1A\d{4}/g);
-                        if (matches) {
-                          hallTickets.push(...matches);
-                          ticketsFound = true;
-                        }
-                      }
-                    });
-                  }
-                });
-              }
-              // Handle array of arrays (without headers)
-              else {
-                jsonData.forEach(row => {
-                  if (Array.isArray(row)) {
-                    row.forEach(cell => {
-                      if (cell && typeof cell === 'string') {
-                        // Look for patterns like "259F1A0501" in the cell
-                        const matches = cell.match(/\d{3}F1A\d{4}/g);
-                        if (matches) {
-                          hallTickets.push(...matches);
-                          ticketsFound = true;
-                        }
-                      }
-                    });
-                  }
-                });
-              }
-            }
-            
-            // If we found tickets, no need to check other sheets
-            if (ticketsFound) break;
-          } catch (sheetError) {
-            console.warn(`Error processing sheet ${sheetName}:`, sheetError);
-            // Continue to next sheet
+          console.log(`Processing sheet: ${sheetName}`);
+          const worksheet = workbook.Sheets[sheetName];
+          
+          // Try multiple approaches to extract data
+          
+          // Approach 1: Standard JSON with headers
+          let sheetData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+          
+          // If no data found, try array format
+          if (!sheetData || sheetData.length === 0) {
+            sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
           }
-        }
-        
-        // Try raw cell method if no tickets found yet
-        if (!ticketsFound) {
-          for (const sheetName of workbook.SheetNames) {
-            const worksheet = workbook.Sheets[sheetName];
+          
+          // Process data to find hall tickets
+          if (Array.isArray(sheetData) && sheetData.length > 0) {
+            console.log(`Found ${sheetData.length} rows in sheet ${sheetName}`);
             
-            // Direct cell access as fallback
-            Object.keys(worksheet).forEach(cell => {
-              // Skip special cells
-              if (cell[0] === '!') return;
+            // Process each row in the sheet
+            sheetData.forEach(row => {
+              // Handle both object format and array format
+              const values = Array.isArray(row) ? row : Object.values(row);
               
-              const cellValue = worksheet[cell].v;
-              if (cellValue && typeof cellValue === 'string') {
-                const matches = cellValue.match(/\d{3}F1A\d{4}/g);
-                if (matches) {
-                  hallTickets.push(...matches);
-                  ticketsFound = true;
+              values.forEach(cellValue => {
+                if (cellValue) {
+                  // Convert to string if it's not already
+                  const strValue = cellValue.toString();
+                  
+                  // Extract hall tickets
+                  const hallTickets = extractHallTickets(strValue);
+                  
+                  if (hallTickets.length > 0) {
+                    allHallTickets.push(...hallTickets);
+                    ticketsFound = true;
+                  }
+                }
+              });
+            });
+          }
+          
+          // If still no tickets found, try direct cell-by-cell approach
+          if (!ticketsFound) {
+            if (!worksheet['!ref']) {
+              console.log('No cell reference found in worksheet, skipping...');
+              continue;
+            }
+            
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            console.log(`Scanning cells in range: ${worksheet['!ref']}`);
+            
+            for (let row = range.s.r; row <= range.e.r; row++) {
+              for (let col = range.s.c; col <= range.e.c; col++) {
+                const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+                const cell = worksheet[cellAddress];
+                
+                if (cell && cell.v) {
+                  const strValue = cell.v.toString();
+                  const hallTickets = extractHallTickets(strValue);
+                  
+                  if (hallTickets.length > 0) {
+                    allHallTickets.push(...hallTickets);
+                    ticketsFound = true;
+                  }
                 }
               }
-            });
-            
-            if (ticketsFound) break;
+            }
           }
         }
         
         // Remove duplicates
-        const uniqueHallTickets = [...new Set(hallTickets)];
+        const uniqueHallTickets = [...new Set(allHallTickets)];
+        console.log(`Found ${uniqueHallTickets.length} unique hall tickets`);
         
         if (uniqueHallTickets.length === 0) {
-          setError('No valid hall ticket numbers found in the file. Please ensure the file contains hall tickets in the format "259F1A0501".');
+          setError('No valid hall ticket numbers found in the file. Please ensure the file contains hall tickets in formats like "259F1A0501".');
           setLoading(false);
           return;
         }
         
+        // Process successfully extracted hall tickets
         handleFileProcessed(uniqueHallTickets);
       } catch (error) {
         console.error('Error processing file:', error);
-        setError('Error processing the file. Please make sure it is a valid Excel file. Specific error: ' + error.message);
+        setError(`Error processing the file: ${error.message}. Please make sure it is a valid Excel file.`);
         setLoading(false);
       }
     };
@@ -176,7 +202,6 @@ const App = () => {
       setLoading(false);
     };
     
-    // Try catch around readAsArrayBuffer for extra safety
     try {
       reader.readAsArrayBuffer(file);
     } catch (error) {
