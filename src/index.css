@@ -1,0 +1,113 @@
+/* Custom styles for SVIT Seating Planner */
+
+body {
+  background-color: #f5f7fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Card enhancements */
+.card {
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+
+.card:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+}
+
+/* Button hover effects */
+.btn {
+  transition: all 0.3s;
+}
+
+.btn-primary {
+  background-color: #2563eb;
+  border-color: #2563eb;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.btn-success {
+  background-color: #10b981;
+  border-color: #10b981;
+}
+
+.btn-success:hover {
+  background-color: #059669;
+  border-color: #059669;
+}
+
+/* Header styling */
+.card-header.bg-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+}
+
+/* Improve focus styles for accessibility */
+.form-control:focus {
+  box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25);
+}
+
+/* Animation for loading spinner */
+.spinner-border {
+  animation-duration: 0.8s;
+}
+
+/* Subtly animated badge for student cards */
+.badge {
+  transition: all 0.2s;
+}
+
+/* Custom utility classes */
+.gap-1 {
+  gap: 0.25rem;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.gap-3 {
+  gap: 1rem;
+}
+
+/* Responsive tweaks */
+@media (max-width: 576px) {
+  .display-5 {
+    font-size: 1.75rem;
+  }
+  
+  .lead {
+    font-size: 1rem;
+  }
+}
+
+/* Tooltip enhancement */
+[title] {
+  position: relative;
+  cursor: help;
+}
+
+/* Special effect for empty cells */
+.text-muted.small:contains("Empty") {
+  opacity: 0.5;
+}
+
+/* Print styles for better exports */
+@media print {
+  .card {
+    break-inside: avoid;
+    margin-bottom: 1rem;
+  }
+  
+  .no-print {
+    display: none;
+  }
+  
+  body {
+    background-color: white;
+  }
+}
