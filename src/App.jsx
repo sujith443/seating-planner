@@ -5,7 +5,7 @@ import SettingsPanel from './components/SettingsPanel';
 import BranchLegend from './components/BranchLegend';
 import SeatingPlanViewer from './components/SeatingPlanViewer';
 import Footer from './components/Footer';
-import { branchMap, branchColors } from './utils/constant';
+import { branchMap, branchColors, getBranchColor } from './utils/constant';
 import { generateSeatingPlan, getBranchFromHallTicket } from './utils/seatingAlgorithm';
 import { downloadSeatingPlan } from './utils/exportFunctions';
 import * as XLSX from 'xlsx';
@@ -21,6 +21,7 @@ const App = () => {
   const [showExportOptions, setShowExportOptions] = useState(false);
   const [studentsPerRoom, setStudentsPerRoom] = useState(24);
   const [roomLayout, setRoomLayout] = useState({ rows: 4, cols: 6 });
+  const [uploadStats, setUploadStats] = useState(null);
 
   const handleFileProcessed = (hallTickets) => {
     console.log(`Processing ${hallTickets.length} hall tickets`);
@@ -37,10 +38,11 @@ const App = () => {
     setLoading(false);
   };
 
-  // Enhanced file upload function
+  // Enhanced file upload function incorporating 10-digit extractor approach
   const handleFileUpload = (file) => {
     setError('');
     setLoading(true);
+    setUploadStats(null);
     
     if (!file) {
       setLoading(false);
@@ -50,17 +52,13 @@ const App = () => {
     
     console.log(`Processing file: ${file.name}`);
     
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
+    const readFile = async () => {
       try {
-        console.log('File loaded, processing...');
+        // Read the file as ArrayBuffer
+        const arrayBuffer = await file.arrayBuffer();
         
-        // Parse Excel file
-        const data = new Uint8Array(e.target.result);
-        
-        // More comprehensive options for reading Excel
-        const workbook = XLSX.read(data, { 
+        // Parse Excel file with comprehensive options
+        const workbook = XLSX.read(arrayBuffer, { 
           type: 'array',
           cellDates: true,
           cellNF: true,
@@ -75,88 +73,60 @@ const App = () => {
         
         console.log('Excel file loaded. Sheets:', workbook.SheetNames);
         
-        // Enhanced hall ticket pattern matching - supports more formats
-        // This regex looks for common hall ticket patterns:
-        // - Standard JNTU format: 3 digits + "F1A" + 4 digits (e.g., 259F1A0501)
-        // - Also matches variations with different separators or formats
+        // Hall ticket pattern detection
+        // The primary pattern for JNTU hall tickets is: 3 digits + "F1A" + 4 digits (e.g., 259F1A0501)
+        // But we'll also look for variations and common formats
         const hallTicketPatterns = [
-          /\d{3}F1A\d{4}/g,  // Standard format: 259F1A0501
-          /\d{2}[A-Z]\d{2}[A-Z]\d{4}/g,  // Other possible formats like 21F15A0123
-          /\b\d{2}[A-Z]{1,2}\d{2}[A-Z]\d{2,4}\b/g  // More general pattern
+          { pattern: /\d{3}F1A\d{4}/g, name: 'Standard JNTU' },  // Standard format: 259F1A0501
+          { pattern: /\d{2}[A-Z]\d{2}[A-Z]\d{4}/g, name: 'Alternative Format' },  // Other possible formats like 21F15A0123
+          { pattern: /\b\d{2}[A-Z]{1,2}\d{2}[A-Z]\d{2,4}\b/g, name: 'General Pattern' },  // More general pattern
+          { pattern: /^[A-Za-z0-9]{10}$/g, name: '10-digit Alphanumeric' }  // Any 10-digit alphanumeric code
         ];
         
-        // Track all found hall tickets
+        // Track all found hall tickets and their patterns
         const allHallTickets = [];
-        
-        // Function to extract hall tickets from a text value
-        const extractHallTickets = (value) => {
-          if (!value || typeof value !== 'string') return [];
-          
-          let foundTickets = [];
-          
-          // Try each pattern
-          hallTicketPatterns.forEach(pattern => {
-            const matches = value.match(pattern);
-            if (matches) {
-              foundTickets = [...foundTickets, ...matches];
-            }
-          });
-          
-          return foundTickets;
+        const patternCounts = {
+          'Standard JNTU': 0,
+          'Alternative Format': 0,
+          'General Pattern': 0,
+          '10-digit Alphanumeric': 0
         };
         
         // Process all sheets in the workbook
-        let ticketsFound = false;
+        const allSheetNames = workbook.SheetNames;
+        const sheetsWithTickets = new Set();
         
-        for (const sheetName of workbook.SheetNames) {
+        for (const sheetName of allSheetNames) {
           console.log(`Processing sheet: ${sheetName}`);
           const worksheet = workbook.Sheets[sheetName];
+          let sheetFoundTickets = false;
           
-          // Try multiple approaches to extract data
+          // Approach 1: Convert to JSON with headers (best for structured data)
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
           
-          // Approach 1: Standard JSON with headers
-          let sheetData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-          
-          // If no data found, try array format
-          if (!sheetData || sheetData.length === 0) {
-            sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-          }
-          
-          // Process data to find hall tickets
-          if (Array.isArray(sheetData) && sheetData.length > 0) {
-            console.log(`Found ${sheetData.length} rows in sheet ${sheetName}`);
-            
-            // Process each row in the sheet
-            sheetData.forEach(row => {
-              // Handle both object format and array format
-              const values = Array.isArray(row) ? row : Object.values(row);
-              
-              values.forEach(cellValue => {
-                if (cellValue) {
-                  // Convert to string if it's not already
-                  const strValue = cellValue.toString();
-                  
-                  // Extract hall tickets
-                  const hallTickets = extractHallTickets(strValue);
-                  
-                  if (hallTickets.length > 0) {
-                    allHallTickets.push(...hallTickets);
-                    ticketsFound = true;
+          // Process each row (this handles both header-based and arbitrary Excel formats)
+          for (const row of jsonData) {
+            // Check all values in the row
+            Object.values(row).forEach(value => {
+              if (value) {
+                const strValue = String(value).trim();
+                
+                // Try each pattern to find hall tickets
+                for (const { pattern, name } of hallTicketPatterns) {
+                  const matches = strValue.match(pattern);
+                  if (matches) {
+                    allHallTickets.push(...matches);
+                    patternCounts[name] += matches.length;
+                    sheetFoundTickets = true;
                   }
                 }
-              });
+              }
             });
           }
           
-          // If still no tickets found, try direct cell-by-cell approach
-          if (!ticketsFound) {
-            if (!worksheet['!ref']) {
-              console.log('No cell reference found in worksheet, skipping...');
-              continue;
-            }
-            
+          // Approach 2: Also try direct cell scanning for complex layouts
+          if (worksheet['!ref']) {
             const range = XLSX.utils.decode_range(worksheet['!ref']);
-            console.log(`Scanning cells in range: ${worksheet['!ref']}`);
             
             for (let row = range.s.r; row <= range.e.r; row++) {
               for (let col = range.s.c; col <= range.e.c; col++) {
@@ -164,22 +134,45 @@ const App = () => {
                 const cell = worksheet[cellAddress];
                 
                 if (cell && cell.v) {
-                  const strValue = cell.v.toString();
-                  const hallTickets = extractHallTickets(strValue);
+                  const strValue = String(cell.v).trim();
                   
-                  if (hallTickets.length > 0) {
-                    allHallTickets.push(...hallTickets);
-                    ticketsFound = true;
+                  // Try each pattern again
+                  for (const { pattern, name } of hallTicketPatterns) {
+                    const matches = strValue.match(pattern);
+                    if (matches) {
+                      allHallTickets.push(...matches);
+                      patternCounts[name] += matches.length;
+                      sheetFoundTickets = true;
+                    }
                   }
                 }
               }
             }
           }
+          
+          if (sheetFoundTickets) {
+            sheetsWithTickets.add(sheetName);
+          }
         }
         
-        // Remove duplicates
-        const uniqueHallTickets = [...new Set(allHallTickets)];
+        // Filter for valid hall tickets (focus on the standard JNTU format)
+        // We prioritize hall tickets that match our known pattern for branch detection
+        const standardFormat = allHallTickets.filter(ticket => /\d{3}F1A\d{4}/.test(ticket));
+        
+        // If we don't find any standard formats, use whatever we found
+        const uniqueHallTickets = [...new Set(standardFormat.length > 0 ? standardFormat : allHallTickets)];
         console.log(`Found ${uniqueHallTickets.length} unique hall tickets`);
+        
+        // Set upload statistics for displaying to user
+        setUploadStats({
+          fileName: file.name,
+          totalSheets: allSheetNames.length,
+          sheetsWithData: sheetsWithTickets.size,
+          sheetsWithTickets: Array.from(sheetsWithTickets),
+          totalTickets: allHallTickets.length,
+          uniqueTickets: uniqueHallTickets.length,
+          patternCounts
+        });
         
         if (uniqueHallTickets.length === 0) {
           setError('No valid hall ticket numbers found in the file. Please ensure the file contains hall tickets in formats like "259F1A0501".');
@@ -189,6 +182,7 @@ const App = () => {
         
         // Process successfully extracted hall tickets
         handleFileProcessed(uniqueHallTickets);
+        
       } catch (error) {
         console.error('Error processing file:', error);
         setError(`Error processing the file: ${error.message}. Please make sure it is a valid Excel file.`);
@@ -196,19 +190,12 @@ const App = () => {
       }
     };
     
-    reader.onerror = (e) => {
-      console.error('FileReader error:', e);
+    // Start the file reading process
+    readFile().catch(error => {
+      console.error('Error reading file:', error);
       setError('Error reading the file. The file might be corrupted or too large.');
       setLoading(false);
-    };
-    
-    try {
-      reader.readAsArrayBuffer(file);
-    } catch (error) {
-      console.error('Error reading file as array buffer:', error);
-      setError('Could not read the file. Please try a different file format or size.');
-      setLoading(false);
-    }
+    });
   };
 
   const handleExport = (format) => {
@@ -344,7 +331,35 @@ const App = () => {
               </div>
             )}
             
-            {excelData && !loading && (
+            {uploadStats && !loading && !error && (
+              <div className="alert alert-light border my-3">
+                <h5 className="alert-heading">
+                  <i className="bi bi-info-circle-fill me-2 text-primary"></i>
+                  File Processing Details
+                </h5>
+                <p className="mb-1"><strong>File:</strong> {uploadStats.fileName}</p>
+                <p className="mb-1"><strong>Sheets Scanned:</strong> {uploadStats.totalSheets}</p>
+                <p className="mb-1"><strong>Sheets With Tickets:</strong> {uploadStats.sheetsWithData} 
+                  {uploadStats.sheetsWithTickets?.length > 0 && 
+                    <span className="text-muted"> ({uploadStats.sheetsWithTickets.join(', ')})</span>
+                  }
+                </p>
+                <p className="mb-1"><strong>Total Tickets Found:</strong> {uploadStats.totalTickets}</p>
+                <p className="mb-1"><strong>Unique Tickets:</strong> {uploadStats.uniqueTickets}</p>
+                
+                <hr />
+                <div className="small">
+                  <p className="mb-1"><strong>Pattern Matches:</strong></p>
+                  <ul className="list-unstyled ms-3">
+                    {Object.entries(uploadStats.patternCounts).map(([pattern, count]) => (
+                      count > 0 ? <li key={pattern}>{pattern}: {count}</li> : null
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            {excelData && !loading && excelData.length > 0 && (
               <div className="alert alert-info mb-4">
                 <div className="d-flex flex-column flex-md-row justify-content-between align-items-center">
                   <div>
@@ -389,7 +404,7 @@ const App = () => {
                         <span 
                           key={branch} 
                           className="badge rounded-pill p-2"
-                          style={{ backgroundColor: branchColors[branch], color: '#333' }}
+                          style={{ backgroundColor: getBranchColor(branch), color: '#333' }}
                         >
                           {branch}: {count} students
                         </span>
@@ -397,6 +412,36 @@ const App = () => {
                     </div>
                   </div>
                 )}
+                
+                {/* Branch Detection Examples Section */}
+                <div className="mt-3 pt-2 border-top">
+                  <h6 className="fw-bold">Branch Detection Examples:</h6>
+                  <div className="row g-2">
+                    {excelData.slice(0, 5).map((ticket, index) => (
+                      <div key={index} className="col-md-4 col-sm-6">
+                        <div className="card bg-light border-0">
+                          <div className="card-body p-2 d-flex align-items-center">
+                            <div className="me-2" style={{ 
+                              width: '24px', 
+                              height: '24px', 
+                              borderRadius: '50%', 
+                              backgroundColor: getBranchColor(getBranchFromHallTicket(ticket)) 
+                            }}></div>
+                            <div>
+                              <code className="small">{ticket}</code>
+                              <div className="small text-muted">{getBranchFromHallTicket(ticket)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {excelData.length > 5 && (
+                    <div className="text-end mt-1">
+                      <small className="text-muted">Showing 5 of {excelData.length} hall tickets</small>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             

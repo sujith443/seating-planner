@@ -6,7 +6,7 @@ const SeatingPlanViewer = ({
   viewMode, 
   roomNames, 
   onRoomNameChange,
-  branchColors 
+  branchColors
 }) => {
   const [editingRoomIndex, setEditingRoomIndex] = useState(null);
   const [editRoomName, setEditRoomName] = useState('');

@@ -2,6 +2,7 @@ import React from 'react';
 import GridView from './GridView';
 import ListView from './ListView';
 import CompactView from './CompactView';
+import { getBranchColor } from '../utils/constant';
 
 const RoomCard = ({
   room,
@@ -76,7 +77,7 @@ const RoomCard = ({
               key={branch} 
               className="badge me-1"
               style={{ 
-                backgroundColor: branchColors[branch], 
+                backgroundColor: getBranchColor(branch), 
                 color: '#333',
                 fontSize: '0.75rem'
               }}

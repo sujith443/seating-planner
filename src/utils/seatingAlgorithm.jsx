@@ -2,23 +2,81 @@ import { branchMap } from './constant';
 
 /**
  * Extract branch from hall ticket number
+ * Works with multiple formats including:
+ * - 259F1A0204 (standard JNTU format)
+ * - 232R5A0319 (alternate format)
+ * - Other variations with different prefixes but similar structure
+ * 
  * @param {string} hallTicket 
  * @returns {string} Branch name
  */
 export const getBranchFromHallTicket = (hallTicket) => {
-  if (!hallTicket || hallTicket.length < 7) {
+  if (!hallTicket || typeof hallTicket !== 'string') {
     return 'Unknown';
   }
   
-  // Extract branch code (2 digits after the letter A)
-  // For a hall ticket like 259F1A0501, we need to extract '05'
-  const branchCode = hallTicket.match(/F1A(\d{2})/)?.[1];
+  // Clean up the hall ticket (remove spaces, make uppercase)
+  const cleanTicket = hallTicket.trim().toUpperCase();
   
-  if (!branchCode) {
-    return 'Unknown';
+  // Try different patterns to extract the branch code
+  
+  // Pattern 1: Standard JNTU format (259F1A0204) - get the 2 digits after F1A
+  const standardMatch = cleanTicket.match(/F1A(\d{2})/i);
+  if (standardMatch && standardMatch[1]) {
+    const branchCode = standardMatch[1];
+    return branchMap[branchCode] || `Unknown-${branchCode}`;
   }
   
-  return branchMap[branchCode] || `Unknown-${branchCode}`;
+  // Pattern 2: Format like 232R5A0319 - get the 2 digits after the last letter sequence
+  const lastLetterMatch = cleanTicket.match(/[A-Z]+(\d{2})\d+$/);
+  if (lastLetterMatch && lastLetterMatch[1]) {
+    const branchCode = lastLetterMatch[1];
+    return branchMap[branchCode] || `Unknown-${branchCode}`;
+  }
+  
+  // Pattern 3: Try to find a pattern like letter(s) + 2 digits + more digits
+  // This matches patterns like ABC0123, 21F15A0123, etc.
+  const letterDigitsMatch = cleanTicket.match(/[A-Z]+(\d{2})\d+/i);
+  if (letterDigitsMatch && letterDigitsMatch[1]) {
+    const branchCode = letterDigitsMatch[1];
+    return branchMap[branchCode] || `Unknown-${branchCode}`;
+  }
+  
+  // For more complex cases, if the hall ticket has a standard length (10 characters),
+  // we can try to extract the branch code from a specific position
+  if (cleanTicket.length === 10) {
+    // In most standard formats, the branch code is at positions 5-6 (0-indexed)
+    const branchCode = cleanTicket.substring(5, 7);
+    if (/^\d{2}$/.test(branchCode)) {
+      return branchMap[branchCode] || `Unknown-${branchCode}`;
+    }
+    
+    // If that didn't work, try positions 7-8
+    const altBranchCode = cleanTicket.substring(7, 9);
+    if (/^\d{2}$/.test(altBranchCode)) {
+      return branchMap[altBranchCode] || `Unknown-${altBranchCode}`;
+    }
+  }
+  
+  // Last resort: look for any 2-digit sequence that might be a branch code
+  // We'll prioritize the first one that's in our branch map
+  const allDigitPairs = cleanTicket.match(/\d{2}/g) || [];
+  for (const pair of allDigitPairs) {
+    if (branchMap[pair]) {
+      return branchMap[pair];
+    }
+  }
+  
+  // If we found any digit pairs, use the second-to-last one (often the branch code)
+  if (allDigitPairs.length >= 2) {
+    const branchCode = allDigitPairs[allDigitPairs.length - 2];
+    return branchMap[branchCode] || `Unknown-${branchCode}`;
+  } else if (allDigitPairs.length === 1) {
+    // If only one digit pair is found, use it
+    return branchMap[allDigitPairs[0]] || `Unknown-${allDigitPairs[0]}`;
+  }
+  
+  return 'Unknown';
 };
 
 /**
@@ -28,19 +86,28 @@ export const getBranchFromHallTicket = (hallTicket) => {
  */
 const sortHallTicketsSequentially = (hallTickets) => {
   return [...hallTickets].sort((a, b) => {
-    // Extract the college code + branch code part (e.g., "259F1A05")
-    const aPrefix = a.substring(0, 7);
-    const bPrefix = b.substring(0, 7);
+    // Extract the branch code part from both hall tickets
+    const aBranch = getBranchFromHallTicket(a);
+    const bBranch = getBranchFromHallTicket(b);
     
-    // Compare prefixes first
-    if (aPrefix !== bPrefix) {
-      return aPrefix.localeCompare(bPrefix);
+    // If branches are different, sort by branch first
+    if (aBranch !== bBranch) {
+      return aBranch.localeCompare(bBranch);
     }
     
-    // If prefixes match, compare the student number part
-    const aNumber = parseInt(a.substring(7), 10);
-    const bNumber = parseInt(b.substring(7), 10);
-    return aNumber - bNumber;
+    // If same branch, try to extract and compare the sequential number part
+    // Assuming the last 2-4 digits are sequence numbers
+    const aSeqMatch = a.match(/\d{2,4}$/);
+    const bSeqMatch = b.match(/\d{2,4}$/);
+    
+    if (aSeqMatch && bSeqMatch) {
+      const aSeq = parseInt(aSeqMatch[0], 10);
+      const bSeq = parseInt(bSeqMatch[0], 10);
+      return aSeq - bSeq;
+    }
+    
+    // If we can't extract sequence numbers, fall back to string comparison
+    return a.localeCompare(b);
   });
 };
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { getBranchColor } from '../utils/constant';
 
 const ListView = ({ room, branchColors }) => {
   return (
@@ -16,7 +17,7 @@ const ListView = ({ room, branchColors }) => {
                 <div 
                   className="card h-100 border"
                   style={{ 
-                    backgroundColor: branchColors[student.branch],
+                    backgroundColor: getBranchColor(student.branch),
                     transition: 'transform 0.2s',
                     cursor: 'default'
                   }}

@@ -74,7 +74,7 @@ const UploadPanel = ({
             type="file" 
             ref={fileInputRef}
             className="d-none" 
-            accept=".xlsx, .xls" 
+            accept=".xlsx, .xls, .csv" 
             onChange={handleFileChange} 
           />
           

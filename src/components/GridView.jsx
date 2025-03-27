@@ -1,8 +1,7 @@
 import React from 'react';
+import { getBranchColor } from '../utils/constant';
 
 const GridView = ({ room, branchColors }) => {
-    console.log(room);
-    
   return (
     <div className="table-responsive">
       <table className="table table-bordered">
@@ -23,7 +22,7 @@ const GridView = ({ room, branchColors }) => {
                   key={colIndex} 
                   className="text-center position-relative"
                   style={{ 
-                    backgroundColor: student ? branchColors[student.branch] : 'white',
+                    backgroundColor: student ? getBranchColor(student.branch) : 'white',
                     transition: 'background-color 0.3s'
                   }}
                 >

@@ -1,4 +1,5 @@
 import React from 'react';
+import { getBranchColor } from '../utils/constant';
 
 const CompactView = ({ room, branchColors }) => {
   return (
@@ -10,7 +11,7 @@ const CompactView = ({ room, branchColors }) => {
               <div 
                 className="border text-center p-1" 
                 style={{ 
-                  backgroundColor: student ? branchColors[student.branch] : '#f8f9fa',
+                  backgroundColor: student ? getBranchColor(student.branch) : '#f8f9fa',
                   minHeight: '60px',
                   display: 'flex',
                   flexDirection: 'column',
